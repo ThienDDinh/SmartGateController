@@ -1,4 +1,4 @@
-##Gate Controller Firmware V1.0.0
+##Gate Controller Firmware V1.0.1
 
 esphome:
   name: gate-controller
@@ -104,28 +104,6 @@ binary_sensor:
       inverted: true
     id: lsw_closed
     name: "Gate Closed"
-
-  # RF signal from Letron board (idle HIGH, trigger on LOW)
-  - platform: gpio
-    pin:
-      number: GPIO3
-      mode: INPUT_PULLUP
-      inverted: true
-    id: rf_signal_in
-    name: "RF Signal In"
-    filters:
-      - delayed_on: 10ms
-    on_press:
-      then:
-        - if:
-            condition:
-              lambda: 'return !id(rf_recently_triggered);'
-            then:
-              - logger.log: "RF signal received: triggering gate"
-              - switch.turn_on: gate_switch
-              - lambda: 'id(rf_recently_triggered) = true;'
-              - delay: 1s
-              - lambda: 'id(rf_recently_triggered) = false;'
 
 #————————————————————
 # Gate Status Text Sensor

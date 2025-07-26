@@ -20,7 +20,7 @@ The Connectivity Interface Module (CIM) is an ESP32-based add-on designed to int
 
 The Connectivity Interface Module (CIM) physically interfaces with the Letron SL3000 main control board at the same 6-pin header where the original RF receiver connects. It sits in-line using a custom interposer PCB, allowing the original RF receiver to remain in place while the CIM takes over control of the gate trigger input.
 
-The Letron controller expects a 5 V active-low signal on its trigger input to initiate a gate cycle. The CIM is responsible for generating this signal. It does so in two cases: either in response to a Home Assistant command received via ESPHome, or when it detects that the RF receiver has pulled its own output low after receiving a button press from a Letron remote. The CIM monitors the RF receiver’s output on a separate line and independently asserts a low signal to the Letron control board when a trigger condition is met. The logic for whether the gate opens or closes remains entirely within the Letron controller.
+The Letron controller expects a 5 V active-low signal on its trigger input to initiate a gate cycle. There are two methods of generating this signal. The CIM will generate this signal in response to a Home Assistant command received via ESPHome, and the RF receiver will still be able to generate this signal as normal. The logic for whether the gate opens or closes remains entirely within the Letron controller.
 
 The CIM draws power from the same 12 V supply provided to the RF receiver. An onboard voltage regulator steps this down to 3.3 V for the ESP32 and associated circuitry. No external power supply is needed.
 
