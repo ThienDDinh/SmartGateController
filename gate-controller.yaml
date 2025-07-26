@@ -1,0 +1,148 @@
+esphome:
+  name: gate-controller
+  friendly_name: Gate
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: esp32c3
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: ""
+
+ota:
+  - platform: esphome
+    password: ""
+
+wifi:
+  ssid: #enter your WiFi SSID here
+  password: #enter your WiFi pass here
+  manual_ip:
+    static_ip: #enter your designated IP for the esp32
+    gateway: #enter the IP of your router
+    subnet: 255.255.252.0
+    dns1: 8.8.8.8
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Gate Hotspot"
+    password: "C6od8r06E3Q2"
+
+captive_portal:
+
+globals:
+  - id: rf_recently_triggered
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: last_gate_command
+    type: std::string
+    restore_value: false
+    initial_value: '"unknown"'
+
+#————————————————————
+# Gate Trigger (momentary pulse)
+#————————————————————
+switch:
+  - platform: gpio
+    pin: GPIO4
+    id: gate_switch
+    name: "Gate Trigger"
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      - lambda: |-
+          // Toggle direction and handle stops
+          bool open_limit = id(lsw_open).state;
+          bool closed_limit = id(lsw_closed).state;
+          std::string last = id(last_gate_command);
+          if (!open_limit && closed_limit) {
+            id(last_gate_command) = "open";
+            ESP_LOGI("gate", "ESP32 signal received: opening gate");
+          } else if (!closed_limit && open_limit) {
+            id(last_gate_command) = "close";
+            ESP_LOGI("gate", "ESP32 signal received: closing gate");
+          } else if (!closed_limit && !open_limit && last == "close") {
+            id(last_gate_command) = "close_stopped";
+            ESP_LOGI("gate", "ESP32 signal received: stop closing gate");
+          } else if (!closed_limit && !open_limit && last == "open") {
+            id(last_gate_command) = "open_stopped";
+            ESP_LOGI("gate", "ESP32 signal received: stop opening gate");
+          } else if (!closed_limit && !open_limit && last == "close_stopped") {
+            id(last_gate_command) = "open";
+            ESP_LOGI("gate", "ESP32 signal received: opening gate");
+          } else if (!closed_limit && !open_limit && last == "open_stopped") {
+            id(last_gate_command) = "close";
+            ESP_LOGI("gate", "ESP32 signal received: closing gate");
+          }
+      - delay: 500ms
+      - switch.turn_off: gate_switch
+
+#————————————————————
+# Limit Switches + RF Input
+#————————————————————
+binary_sensor:
+  # Gate Open / Closed (normal binary sensors)
+  - platform: gpio
+    pin:
+      number: GPIO5
+      mode: INPUT_PULLUP
+      inverted: true
+    id: lsw_open
+    name: "Gate Open"
+
+  - platform: gpio
+    pin:
+      number: GPIO6
+      mode: INPUT_PULLUP
+      inverted: true
+    id: lsw_closed
+    name: "Gate Closed"
+
+  # RF signal from Letron board (idle HIGH, trigger on LOW)
+  - platform: gpio
+    pin:
+      number: GPIO3
+      mode: INPUT_PULLUP
+      inverted: true
+    id: rf_signal_in
+    name: "RF Signal In"
+    filters:
+      - delayed_on: 10ms
+    on_press:
+      then:
+        - if:
+            condition:
+              lambda: 'return !id(rf_recently_triggered);'
+            then:
+              - logger.log: "RF signal received: triggering gate"
+              - switch.turn_on: gate_switch
+              - lambda: 'id(rf_recently_triggered) = true;'
+              - delay: 1s
+              - lambda: 'id(rf_recently_triggered) = false;'
+
+#————————————————————
+# Gate Status Text Sensor
+#————————————————————
+text_sensor:
+  - platform: template
+    name: "Gate Status"
+    update_interval: 2s 
+    id: gate_status
+    lambda: |-
+      // Determine status based on limit switches and last command
+      if (id(lsw_open).state && !id(lsw_closed).state) {
+        return {"open"};
+      } else if (id(lsw_closed).state && !id(lsw_open).state) {
+        return {"closed"};
+      } else if (id(last_gate_command) == "open") {
+        return {"opening"};
+      } else if (id(last_gate_command) == "close") {
+        return {"closing"};
+      } else {
+        return {"stopped"};
+      }
