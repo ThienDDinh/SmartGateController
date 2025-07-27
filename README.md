@@ -34,7 +34,7 @@ The CIM draws power from the same 12 V supply provided to the RF receiver. An on
 * ESPHome installed on your computer (for compiling and flashing firmware)
 * USB-C cable for firmware flashing
 * PH1 screwdriver to remove the Letron enclosure
-* Flat-blade (slotted) screwdriver for the 3.81 mm screw terminals
+* Flat-blade (slotted) screwdriver for the screw terminals
 
 ### 4.2 Firmware Flashing (Pre-Install)
 
@@ -85,14 +85,14 @@ The CIM draws power from the same 12 V supply provided to the RF receiver. An on
 
 > **Prototype status:** Only v0.4 was assembled. Design corrections are captured in v0.5 but will not be produced and tested.
 
-* **Issue – Floating RF\_OUT line**
-  Measured RF\_OUT at \~5 V idle—but it’s pulled high by the Letron controller, not driven by the RF board. When inactive it drifted to \~0.8 V, which the CIM’s v0.4 divider didn’t recognize as HIGH.
+* **Issue – Floating RF_OUT line**
+  Measured RF_OUT at \~5 V idle—but it’s pulled high by the Letron controller, not driven by the RF board. When inactive it drifted to \~0.8 V, which the CIM’s v0.4 divider didn’t recognize as HIGH.
 
   **Workaround**
-  Added a 10 kΩ pull-up to 5 V before the divider so the ESP32 sees a solid HIGH until the RF receiver pulls the line low.
+  Added a 10 kΩ pull-up to 5 V before the divider so the ESP32 sees a solid HIGH until the RF receiver pulls the line low. Tie RF_OUT and CIM_OUT together using a jumper wire connected to the screw terminals.
 
-  **Design update**
-  Eliminate the divider and pull-up: RF\_OUT now connects directly to the ESP32 input using its internal 3.3 V pull-up.
+   **Design update**  
+  Eliminated that pull-up, and merged RF_OUT and CIM_OUT onto the same active-LOW trigger line (OUT). Now the RF receiver can still drive the gate directly when the CIM is inactive, and the CIM simply monitors that shared line to detect any trigger (whether from itself or RF). The line remains pulled up to 5 V by the Letron controller, and the CIM uses its divider to read it.
 
 * **Issue – Buck converter EN-pin logic**
   The 5 V buck converter’s EN pin must be LOW to enable output but was wired HIGH, so it stayed off.

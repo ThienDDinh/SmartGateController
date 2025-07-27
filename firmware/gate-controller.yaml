@@ -1,4 +1,4 @@
-##Gate Controller Firmware V1.0.1
+##Gate Controller Firmware V2.0
 
 esphome:
   name: gate-controller
@@ -38,64 +38,35 @@ wifi:
 captive_portal:
 
 globals:
-  - id: rf_recently_triggered
-    type: bool
-    restore_value: false
-    initial_value: 'false'
   - id: last_gate_command
     type: std::string
     restore_value: false
     initial_value: '"unknown"'
 
 #————————————————————
-# Gate Trigger (momentary pulse)
+# 1) Gate Trigger (output only, no logic here)
 #————————————————————
 switch:
   - platform: gpio
     pin: GPIO4
     id: gate_switch
-    name: "Gate Trigger"
+    name: "Gate Switch"
     restore_mode: ALWAYS_OFF
     on_turn_on:
-      - lambda: |-
-          // Toggle direction and handle stops
-          bool open_limit = id(lsw_open).state;
-          bool closed_limit = id(lsw_closed).state;
-          std::string last = id(last_gate_command);
-          if (!open_limit && closed_limit) {
-            id(last_gate_command) = "open";
-            ESP_LOGI("gate", "ESP32 signal received: opening gate");
-          } else if (!closed_limit && open_limit) {
-            id(last_gate_command) = "close";
-            ESP_LOGI("gate", "ESP32 signal received: closing gate");
-          } else if (!closed_limit && !open_limit && last == "close") {
-            id(last_gate_command) = "close_stopped";
-            ESP_LOGI("gate", "ESP32 signal received: stop closing gate");
-          } else if (!closed_limit && !open_limit && last == "open") {
-            id(last_gate_command) = "open_stopped";
-            ESP_LOGI("gate", "ESP32 signal received: stop opening gate");
-          } else if (!closed_limit && !open_limit && last == "close_stopped") {
-            id(last_gate_command) = "open";
-            ESP_LOGI("gate", "ESP32 signal received: opening gate");
-          } else if (!closed_limit && !open_limit && last == "open_stopped") {
-            id(last_gate_command) = "close";
-            ESP_LOGI("gate", "ESP32 signal received: closing gate");
-          }
-      - delay: 500ms
+      - delay: 500ms                # pulse length
       - switch.turn_off: gate_switch
 
 #————————————————————
-# Limit Switches + RF Input
+# 2) Internal Limit Switches (hidden in HA)
 #————————————————————
 binary_sensor:
-  # Gate Open / Closed (normal binary sensors)
   - platform: gpio
     pin:
       number: GPIO5
       mode: INPUT_PULLUP
       inverted: true
     id: lsw_open
-    name: "Gate Open"
+    internal: true
 
   - platform: gpio
     pin:
@@ -103,26 +74,74 @@ binary_sensor:
       mode: INPUT_PULLUP
       inverted: true
     id: lsw_closed
-    name: "Gate Closed"
+    internal: true
 
 #————————————————————
-# Gate Status Text Sensor
+# 3) Shared-line Sensor (triggers logic on any pull-low)
+#————————————————————
+  - platform: gpio
+    pin:
+      number: GPIO3
+      mode: INPUT_PULLUP
+      inverted: true
+    id: signal_in
+    internal: true
+    name: "Gate Trigger Pulse"
+    filters:
+      - delayed_on: 10ms
+    on_press:
+      then:
+        - lambda: |-
+            // Decide next command based solely on current limit switches
+            bool open = id(lsw_open).state;
+            bool closed = id(lsw_closed).state;
+            std::string last = id(last_gate_command);
+            if (!open && closed) {
+              id(last_gate_command) = "open";
+            }
+            else if (!closed && open) {
+              id(last_gate_command) = "close";
+            }
+            else if (!open && !closed && last == "close") {
+              id(last_gate_command) = "close stopped";
+            } 
+            else if (!closed && !open && last == "open") {
+              id(last_gate_command) = "open stopped";
+            }
+            else if (!closed && !open && last == "close stopped") {
+              id(last_gate_command) = "open";
+            } 
+            else if (!closed && !open && last == "open stopped") {
+              id(last_gate_command) = "close";
+            }
+
+        - logger.log:
+            format: "Gate Triggered: new gate command → %s"
+            args: [id(last_gate_command).c_str()]
+
+#————————————————————
+# 4) Exposed Gate Status (only this appears in HA)
 #————————————————————
 text_sensor:
   - platform: template
     name: "Gate Status"
-    update_interval: 2s 
     id: gate_status
+    update_interval: 2s
     lambda: |-
-      // Determine status based on limit switches and last command
       if (id(lsw_open).state && !id(lsw_closed).state) {
-        return {"open"};
-      } else if (id(lsw_closed).state && !id(lsw_open).state) {
-        return {"closed"};
-      } else if (id(last_gate_command) == "open") {
-        return {"opening"};
-      } else if (id(last_gate_command) == "close") {
-        return {"closing"};
-      } else {
-        return {"stopped"};
+        return {"Open"};
       }
+      if (id(lsw_closed).state && !id(lsw_open).state) {
+        return {"Closed"};
+      }
+      if (id(last_gate_command) == "open") {
+        return {"Opening"};
+      }
+      if (id(last_gate_command) == "close") {
+        return {"Closing"};
+      }
+      if (id(last_gate_command) == "open stopped" ||
+          id(last_gate_command) == "close stopped") {
+        return {"Stopped"};
+      }
+      return {"Unknown"};
